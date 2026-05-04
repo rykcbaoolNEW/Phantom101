@@ -1,0 +1,510 @@
+const ADBLOCK = {
+    blocked: [
+        "*youtube.com/get_video_info?*adformat=*",
+        "*googlevideo.com/videoplayback*",
+        "*youtube.com/api/stats/ads/*",
+        "*youtube.com/pagead/*",
+        "*youtube.com/api/stats*",
+        "*youtube.com/get_midroll*",
+        "*youtube.com/ptracking*",
+        "*.facebook.com/ads/*",
+        "*youtube.com/youtubei/v1/player*",
+        "*youtube.com/s/player*",
+        "*youtube.com/api/timedtext*",
+        "*.facebook.com/tr/*",
+        "*.fbcdn.net/ads/*",
+        "*graph.facebook.com/ads/*",
+        "*graph.facebook.com/pixel*",
+        "*ads-api.twitter.com/*",
+        "*analytics.twitter.com/*",
+        "*.twitter.com/i/ads/*",
+        "*.ads.yahoo.com*",
+        "*.advertising.com*",
+        "*.adtechus.com*",
+        "*.oath.com*",
+        "*.verizonmedia.com*",
+        "*.amazon-adsystem.com*",
+        "*aax.amazon-adsystem.com/*",
+        "*c.amazon-adsystem.com/*",
+        "*.adnxs.com*",
+        "*.adnxs-simple.com*",
+        "*ab.adnxs.com/*",
+        "*doubleclick.net*",
+        "*googlesyndication.com*",
+        "*googleadservices.com*",
+        "*.rubiconproject.com*",
+        "*.magnite.com*",
+        "*.pubmatic.com*",
+        "*ads.pubmatic.com/*",
+        "*.criteo.com*",
+        "*bidder.criteo.com/*",
+        "*static.criteo.net/*",
+        "*.openx.net*",
+        "*.openx.com*",
+        "*.indexexchange.com*",
+        "*.casalemedia.com*",
+        "*.indexexchange.com*",
+        "*.adcolony.com*",
+        "*.chartboost.com*",
+        "*.unityads.unity3d.com*",
+        "*.inmobiweb.com*",
+        "*.tapjoy.com*",
+        "*.applovin.com*",
+        "*.vungle.com*",
+        "*.ironsrc.com*",
+        "*.fyber.com*",
+        "*.smaato.net*",
+        "*.supersoniads.com*",
+        "*.startappservice.com*",
+        "*.airpush.com*",
+        "*.outbrain.com*",
+        "*.taboola.com*",
+        "*.revcontent.com*",
+        "*.zedo.com*",
+        "*.mgid.com*",
+        "*/ads/*",
+        "*/adserver/*",
+        "*/adclick/*",
+        "*/banner_ads/*",
+        "*/sponsored/*",
+        "*/promotions/*",
+        "*/tracking/ads/*",
+        "*/promo/*",
+        "*/affiliates/*",
+        "*/partnerads/*",
+        "*moatads.com*",
+        "*adsafeprotected.com*",
+        "*chartbeat.com*",
+        "*scorecardresearch.com*",
+        "*quantserve.com*",
+        "*krxd.net*",
+        "*demdex.net*"
+    ]
+};
+
+const ADRULES = ADBLOCK.blocked.map(pattern => {
+    try {
+        const regexPattern = pattern
+            .replace(/\./g, '\\.')
+            .replace(/\?/g, '\\?')
+            .replace(/\*/g, '.*');
+        return new RegExp('^' + regexPattern + '$', 'i');
+    } catch (e) {
+        console.error("Invalid adblock pattern:", pattern, e);
+        return null;
+    }
+}).filter(Boolean);
+
+function isAdBlocked(url) {
+    const urlStr = url.toString();
+    for (const regex of ADRULES) {
+        if (regex.test(urlStr)) return true;
+    }
+    return false;
+}
+
+const swPath = self.location.pathname;
+const basePath = swPath.substring(0, swPath.lastIndexOf('/') + 1);
+self.basePath = self.basePath || basePath;
+
+self.$scramjet = {
+    files: {
+        wasm: "https://cdn.jsdelivr.net/gh/Destroyed12121/Staticsj@main/JS/scramjet.wasm.wasm",
+        sync: "https://cdn.jsdelivr.net/gh/Destroyed12121/Staticsj@main/JS/scramjet.sync.js",
+    }
+};
+
+importScripts("https://cdn.jsdelivr.net/gh/Destroyed12121/Staticsj@main/JS/scramjet.all.js");
+importScripts("https://cdn.jsdelivr.net/npm/@mercuryworkshop/bare-mux/dist/index.js");
+
+const { ScramjetServiceWorker } = $scramjetLoadWorker();
+const scramjet = new ScramjetServiceWorker({
+    prefix: basePath + "scramjet/"
+});
+
+self.addEventListener('install', (e) => self.skipWaiting());
+self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+
+let wispConfig = {
+    wispurl: null,
+    servers: [],
+    autoswitch: true,
+    transport: 'epoxy'
+};
+
+let serverHealth = new Map();
+let currentServerStartTime = null;
+const MAX_CONSECUTIVE_FAILURES = 2;
+const MAX_RETRIES = 3;
+const PING_TIMEOUT = 3000;
+
+let resolveConfigReady;
+const configReadyPromise = new Promise(resolve => resolveConfigReady = resolve);
+
+async function pingServer(url) {
+    return new Promise((resolve) => {
+        const start = Date.now();
+        try {
+            const ws = new WebSocket(url);
+            const timeout = setTimeout(() => {
+                try { ws.close(); } catch { }
+                resolve({ url, success: false, latency: null });
+            }, PING_TIMEOUT);
+
+            ws.onopen = () => {
+                clearTimeout(timeout);
+                const latency = Date.now() - start;
+                try { ws.close(); } catch { }
+                resolve({ url, success: true, latency });
+            };
+
+            ws.onerror = () => {
+                clearTimeout(timeout);
+                try { ws.close(); } catch { }
+                resolve({ url, success: false, latency: null });
+            };
+        } catch {
+            resolve({ url, success: false, latency: null });
+        }
+    });
+}
+
+function updateServerHealth(url, success) {
+    const health = serverHealth.get(url) || { consecutiveFailures: 0, successes: 0, lastSuccess: 0 };
+
+    if (success) {
+        health.consecutiveFailures = 0;
+        health.successes++;
+        health.lastSuccess = Date.now();
+    } else {
+        health.consecutiveFailures++;
+    }
+
+    serverHealth.set(url, health);
+    return health;
+}
+
+function switchToServer(url, latency = null, reason = 'Connection unstable') {
+    if (url === wispConfig.wispurl) return;
+
+    if (wispConfig.wispurl) {
+        console.log(`SW: Switching from ${wispConfig.wispurl} to ${url}`);
+    } else {
+        console.log(`SW: Initial server set to ${url}`);
+    }
+
+    wispConfig.wispurl = url;
+    currentServerStartTime = Date.now();
+
+    scramjet.client = null;
+
+    self.clients.matchAll().then(clients => {
+        clients.forEach(client => {
+            client.postMessage({
+                type: 'wispChanged',
+                url: url,
+                name: wispConfig.servers.find(s => s.url === url)?.name || 'New Server',
+                latency: latency,
+                reason: reason
+            });
+        });
+    });
+}
+
+async function proactiveServerCheck() {
+    if (!wispConfig.autoswitch || !wispConfig.servers || wispConfig.servers.length === 0) return;
+
+    const currentUrl = wispConfig.wispurl;
+
+    const results = await Promise.all(
+        wispConfig.servers.map(s => pingServer(s.url))
+    );
+
+    results.forEach(r => updateServerHealth(r.url, r.success));
+
+    const currentHealth = serverHealth.get(currentUrl);
+    const bestWorking = results
+        .filter(r => r.success)
+        .sort((a, b) => a.latency - b.latency)[0];
+
+    if (bestWorking && bestWorking.url !== currentUrl) {
+        const currentResult = results.find(r => r.url === currentUrl);
+        const shouldSwitch = !currentResult?.success ||
+            (currentResult.latency > 1500) ||
+            (currentResult.latency > 500 && bestWorking.latency < currentResult.latency * 0.5);
+
+        if (shouldSwitch) {
+            switchToServer(bestWorking.url, bestWorking.latency, !currentResult?.success ? "Previous server was unresponsive" : "Found significantly faster server");
+        }
+    }
+}
+
+self.addEventListener("message", ({ data }) => {
+    if (data.type === "config") {
+        if (data.wispurl) {
+            wispConfig.wispurl = data.wispurl;
+            currentServerStartTime = Date.now();
+        }
+        if (data.servers && data.servers.length > 0) {
+            wispConfig.servers = data.servers;
+            if (wispConfig.autoswitch) {
+                setTimeout(proactiveServerCheck, 500);
+            }
+        }
+        if (typeof data.autoswitch !== 'undefined') {
+            wispConfig.autoswitch = data.autoswitch;
+            if (wispConfig.autoswitch && wispConfig.servers?.length > 0) {
+                setTimeout(proactiveServerCheck, 500);
+            }
+        }
+        if (data.transport) {
+            wispConfig.transport = data.transport;
+        }
+        if (wispConfig.wispurl && resolveConfigReady) {
+            resolveConfigReady();
+            resolveConfigReady = null;
+        }
+    } else if (data.type === "ping") {
+        pingServer(wispConfig.wispurl).then(result => {
+            self.clients.matchAll().then(clients => {
+                clients.forEach(client => {
+                    client.postMessage({ type: 'pingResult', ...result });
+                });
+            });
+        });
+    }
+});
+
+self.addEventListener("fetch", (event) => {
+    event.respondWith((async () => {
+        if (isAdBlocked(event.request.url)) {
+            return new Response(new ArrayBuffer(0), { status: 204 });
+        }
+
+        await scramjet.loadConfig();
+        if (scramjet.route(event)) {
+            return scramjet.fetch(event);
+        }
+
+        try {
+            const url = new URL(event.request.url);
+            const isCacheable = event.request.method === "GET" && 
+                (url.pathname.endsWith('NT.html') || 
+                 url.pathname.endsWith('.css') || 
+                 (url.pathname.endsWith('.js') && !url.pathname.includes('script.js') && !url.pathname.includes('sw.js')) || 
+                 url.hostname.includes("cloudflare") || 
+                 url.hostname.includes("jsdelivr"));
+
+            if (isCacheable && !url.pathname.includes('/scramjet/')) {
+                const cachedRes = await caches.match(event.request);
+                const fetchPromise = fetch(event.request).then(async res => {
+                    if (res.ok) {
+                        const cache = await caches.open('nt-cache-v1');
+                        cache.put(event.request, res.clone());
+                    }
+                    return res;
+                }).catch(() => null);
+
+                if (cachedRes) {
+                    const clients = await self.clients.matchAll();
+                    clients.forEach(c => c.postMessage({ type: 'resource-loaded', url: event.request.url, status: cachedRes.status }));
+                    return cachedRes;
+                }
+
+                const res = await fetchPromise;
+                if (res) {
+                    const clients = await self.clients.matchAll();
+                    clients.forEach(c => c.postMessage({ type: 'resource-loaded', url: event.request.url, status: res.status }));
+                    return res;
+                }
+            }
+
+            const response = await fetch(event.request);
+            const clients = await self.clients.matchAll();
+            clients.forEach(client => {
+                client.postMessage({
+                    type: 'resource-loaded',
+                    url: event.request.url,
+                    status: response.status
+                });
+            });
+            return response;
+        } catch (err) {
+            const clients = await self.clients.matchAll();
+            clients.forEach(client => {
+                client.postMessage({
+                    type: 'resource-loaded',
+                    url: event.request.url,
+                    status: 0
+                });
+            });
+            throw err;
+        }
+    })());
+});
+
+const EPOXY_URL = "https://cdn.jsdelivr.net/npm/@mercuryworkshop/epoxy-transport@2.1.28/dist/index.mjs";
+const LIBCURL_URL = "https://cdn.jsdelivr.net/gh/Destroyed12121/Staticsj@main/libcurl.mjs";
+
+function isTlsError(msg) {
+    msg = (msg || '').toLowerCase();
+    return msg.includes('tls') || msg.includes('handshake') || (msg.includes('eof') && msg.includes('connect'));
+}
+
+let bareMuxConnection = null;
+
+async function setupTransport(transport, wispUrl) {
+    if (!bareMuxConnection) {
+        bareMuxConnection = new BareMux.BareMuxConnection(basePath + "bareworker.js");
+    }
+    
+    if (transport === "libcurl") {
+        // Use a manual transport function to ensure load_wasm is called in the worker
+        await bareMuxConnection.setManualTransport(`
+            return (async () => {
+                const { LibcurlTransport } = await import('${LIBCURL_URL}');
+                await LibcurlTransport.load_wasm();
+                return [LibcurlTransport, 'libcurl'];
+            })()
+        `, [{ wisp: wispUrl }]);
+    } else {
+        await bareMuxConnection.setTransport(EPOXY_URL, [{ wisp: wispUrl }]);
+    }
+    
+    scramjet.client = new BareMux.BareClient();
+}
+
+scramjet.addEventListener("request", async (e) => {
+    e.response = (async () => {
+        await configReadyPromise;
+
+        if (!wispConfig.wispurl) {
+            return new Response("Wisp URL not configured", { status: 500 });
+        }
+
+        if (!scramjet.client) {
+            try {
+                await setupTransport(wispConfig.transport, wispConfig.wispurl);
+            } catch (err) {
+                console.warn("SW: Transport failed, attempting fallback:", err);
+                const alt = wispConfig.transport === "libcurl" ? "epoxy" : "libcurl";
+                try {
+                    await setupTransport(alt, wispConfig.wispurl);
+                    const clients = await self.clients.matchAll();
+                    clients.forEach(client => {
+                        client.postMessage({
+                            type: 'transportFallback',
+                            original: wispConfig.transport,
+                            fallback: alt,
+                            error: err.message
+                        });
+                    });
+                } catch {
+                    throw err;
+                }
+            }
+        }
+
+        let lastErr;
+        let triedTransportSwap = false;
+        let triedServerSwap = false;
+
+        for (let i = 0; i <= MAX_RETRIES; i++) {
+            try {
+                const response = await scramjet.client.fetch(e.url, {
+                    method: e.method,
+                    body: e.body,
+                    headers: e.requestHeaders,
+                    credentials: "include",
+                    mode: e.mode === "cors" ? e.mode : "same-origin",
+                    cache: e.cache,
+                    redirect: "manual",
+                    duplex: "half",
+                });
+
+                self.clients.matchAll().then(clients => {
+                    clients.forEach(client => {
+                        client.postMessage({
+                            type: 'resource-loaded',
+                            url: e.url,
+                            status: response.status
+                        });
+                    });
+                });
+
+                return response;
+            } catch (err) {
+                lastErr = err;
+                const errMsg = err.message.toLowerCase();
+                const isRetryable = errMsg.includes("connect") ||
+                    errMsg.includes("eof") ||
+                    errMsg.includes("handshake") ||
+                    errMsg.includes("reset");
+
+                if (!isRetryable || e.method !== 'GET') break;
+
+                if (isTlsError(err.message) && !triedTransportSwap) {
+                    triedTransportSwap = true;
+                    const alt = wispConfig.transport === "libcurl" ? "epoxy" : "libcurl";
+                    console.warn(`SW: TLS error, swapping transport to ${alt}`);
+                    try {
+                        scramjet.client = null;
+                        await setupTransport(alt, wispConfig.wispurl);
+                        continue;
+                    } catch { }
+                }
+
+                if (isTlsError(err.message) && !triedServerSwap && wispConfig.autoswitch && wispConfig.servers?.length > 1) {
+                    triedServerSwap = true;
+                    for (const server of wispConfig.servers) {
+                        if (server.url === wispConfig.wispurl) continue;
+                        const ping = await pingServer(server.url);
+                        if (ping.success) {
+                            console.warn(`SW: TLS error persists, switching WISP to ${server.url}`);
+                            switchToServer(server.url, ping.latency, "TLS handshake failure");
+                            scramjet.client = null;
+                            try {
+                                await setupTransport(wispConfig.transport, server.url);
+                                continue;
+                            } catch { }
+                            break;
+                        }
+                    }
+                }
+
+                if (i === MAX_RETRIES) break;
+
+                console.warn(`Scramjet retry ${i + 1}/${MAX_RETRIES} for ${e.url} due to: ${err.message}`);
+                scramjet.client = null;
+                await new Promise(r => setTimeout(r, 500 * (i + 1)));
+                try {
+                    await setupTransport(wispConfig.transport, wispConfig.wispurl);
+                } catch { }
+            }
+        }
+
+        updateServerHealth(wispConfig.wispurl, false);
+
+        if (wispConfig.autoswitch && wispConfig.servers && wispConfig.servers.length > 1 && !triedServerSwap) {
+            const currentHealth = serverHealth.get(wispConfig.wispurl);
+
+            if (currentHealth && currentHealth.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                for (const server of wispConfig.servers) {
+                    if (server.url === wispConfig.wispurl) continue;
+                    const serverH = serverHealth.get(server.url);
+                    if (!serverH || serverH.consecutiveFailures < MAX_CONSECUTIVE_FAILURES) {
+                        const pingResult = await pingServer(server.url);
+                        if (pingResult.success) {
+                            switchToServer(server.url, pingResult.latency);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        console.error("Scramjet Final Fetch Error:", lastErr);
+        return new Response("Scramjet Fetch Error: " + lastErr.message, { status: 502 });
+    })();
+});
+

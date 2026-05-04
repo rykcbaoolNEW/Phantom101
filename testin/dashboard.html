@@ -1,0 +1,260 @@
+<!-- this lets me see how many people are online and send announcements remotely through my cloudfare worker and more-->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>future</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #000;
+            color: #fff;
+            line-height: 1.5;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px dashed #333;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        input[type="time"],
+        input[type="password"],
+        textarea {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            color: #eee;
+            padding: 8px;
+            border-radius: 4px;
+            outline: none;
+            color-scheme: dark;
+        }
+
+        button {
+            padding: 6px 12px;
+            background: #111;
+            color: #fff;
+            border: 1px solid #333;
+            font-family: monospace;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #222;
+        }
+
+        button.danger {
+            color: #f00;
+        }
+
+        button.success {
+            color: #0f0;
+        }
+
+        button.danger:hover {
+            background: #300;
+        }
+
+        button.success:hover {
+            background: #030;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        th,
+        td {
+            border: 1px solid #333;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background: #111;
+        }
+
+        .success {
+            color: #0f0;
+        }
+
+        .error {
+            color: #f00;
+        }
+
+        .flex {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        #domain-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            font-size: 13px;
+        }
+
+        #domain-table th,
+        #domain-table td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #222;
+        }
+
+        .stat-box {
+            background: #111;
+            padding: 15px;
+            border: 1px solid #333;
+            text-align: center;
+        }
+
+        .stat-box .value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .stat-box .label {
+            font-size: 12px;
+            color: #888;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 200px;
+            font-size: 12px;
+        }
+
+        textarea::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        textarea::-webkit-scrollbar-track {
+            background: #111;
+        }
+
+        textarea::-webkit-scrollbar-thumb {
+            background: #444;
+            border-radius: 4px;
+        }
+
+        textarea::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+
+        .checkbox-col {
+            width: 30px;
+        }
+
+        input[type="checkbox"] {
+            accent-color: #555;
+            filter: invert(1);
+        }
+
+        .remove-x {
+            cursor: pointer;
+            color: #888;
+            font-size: 14px;
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            line-height: 20px;
+            text-align: center;
+            border-radius: 3px;
+            transition: background 0.2s;
+        }
+
+        .remove-x:hover {
+            background: #333;
+        }
+
+        th .remove-x {
+            vertical-align: middle;
+        }
+
+        input[type="number"] {
+            -webkit-appearance: textfield;
+            -moz-appearance: textfield;
+            appearance: textfield;
+        }
+
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="login-section" class="section">
+        <h3>Login</h3>
+        <input type="password" id="passData" placeholder="Enter Password">
+        <button onclick="attemptLogin()">Login</button>
+        <span id="login-msg"></span>
+    </div>
+
+    <div id="admin-panel"></div>
+
+    <script>
+        const DASH_WORKER_URL = "https://dashboard.leelive2021.workers.dev";
+
+        async function attemptLogin() {
+            const pass = document.getElementById("passData").value;
+            const msg = document.getElementById("login-msg");
+            msg.innerText = "Checking...";
+            msg.className = "";
+
+            try {
+                const res = await fetch(DASH_WORKER_URL + "/auth", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ pass })
+                });
+
+                if (!res.ok) {
+                    msg.innerText = "Wrong Password!";
+                    msg.className = "error";
+                    return;
+                }
+
+                const html = await res.text();
+                document.getElementById("login-section").style.display = "none";
+                const panel = document.getElementById("admin-panel");
+                panel.innerHTML = html;
+
+                panel.querySelectorAll("script").forEach(old => {
+                    const s = document.createElement("script");
+                    s.textContent = old.textContent;
+                    old.parentNode.replaceChild(s, old);
+                });
+            } catch (e) {
+                msg.innerText = "Network Error";
+                msg.className = "error";
+            }
+        }
+
+        document.getElementById("passData").addEventListener("keydown", e => {
+            if (e.key === "Enter") attemptLogin();
+        });
+    </script>
+</body>
+
+</html>

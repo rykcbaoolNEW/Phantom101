@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Domain Finder</title>
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../components/topbar.css">
+    <link rel="stylesheet" href="../styles/background.css">
+    <script src="../config.js" defer></script>
+    <script src="../scripts/settings.js" defer></script>
+    <script src="../scripts/background.js" defer></script>
+    <script src="../scripts/notifications.js" defer></script>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 120px;
+            background: radial-gradient(circle at top, #121212, #050505);
+            background-attachment: fixed;
+            color: #e4e4e7;
+            min-height: 100vh;
+            margin: 0;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+
+        .app-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            padding-bottom: 40px;
+        }
+
+        .search-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            width: 100%;
+            max-width: 600px;
+        }
+
+        .results-container {
+            width: 100%;
+            max-width: 550px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding-bottom: 50px;
+        }
+
+        .result-item {
+            padding: 14px 16px;
+            background: #0f0f0f;
+            border: 1px solid #1f1f1f;
+            border-radius: 9px;
+            text-decoration: none;
+            color: #e4e4e7;
+            transition: background 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .result-item:hover {
+            background: #1a1a1a;
+        }
+
+        .filter-select,
+        .input,
+        .btn {
+            background: #0f0f0f;
+            border: 1px solid #1f1f1f;
+            color: #e4e4e7;
+            padding: 10px 14px;
+            border-radius: 9px;
+            outline: none;
+        }
+
+        .btn {
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .btn:hover {
+            background: #1a1a1a;
+        }
+
+        .status-badge {
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 5px 12px;
+            border-radius: 22px;
+            white-space: nowrap;
+        }
+
+        .status-blocked {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .status-allowed {
+            background: rgba(34, 197, 94, 0.15);
+            color: #4ade80;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+
+        .status-pending {
+            background: rgba(161, 161, 170, 0.1);
+            color: #a1a1aa;
+            border: 1px solid rgba(161, 161, 170, 0.2);
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app-content">
+        <h1>Domain Finder</h1>
+    <div class="search-container">
+        <select id="filterSelect" class="filter-select">
+            <option value="securly" selected>Securly</option>
+            <option value="aristotle">Aristotle</option>
+            <option value="blocksi">Blocksi</option>
+            <option value="cisco">Cisco</option>
+            <option value="contentkeeper">ContentKeeper</option>
+            <option value="deledao">Deledao</option>
+            <option value="fortiguard">FortiGuard</option>
+            <option value="goguardian">GoGuardian</option>
+            <option value="iboss">Iboss</option>
+            <option value="lanschool">LanSchool</option>
+            <option value="lightspeed">Lightspeed</option>
+            <option value="linewize">Linewize</option>
+            <option value="paloalto">Palo Alto</option>
+            <option value="senso">Senso</option>
+            <option value="">No Filter</option>
+        </select>
+        <input type="text" id="urlInput" class="input" placeholder="Enter URL or IP..." autofocus style="flex: 1;">
+        <button id="searchBtn" class="btn">Search</button>
+    </div>
+    <div id="results" class="results-container"></div>
+    <div id="errorMsg" style="color: #ef4444; margin-top: 10px;"></div>
+    </div>
+
+    <script>
+        const input = document.getElementById('urlInput');
+        const filterSelect = document.getElementById('filterSelect');
+        const btn = document.getElementById('searchBtn');
+        const results = document.getElementById('results');
+        const errorMsg = document.getElementById('errorMsg');
+
+        let currentDomains = [];
+        let currentBadges = [];
+
+        const API_BASE = 'https://domainfinder.leelive2021.workers.dev';
+        async function checkDomain(idx, filter) {
+            const domain = currentDomains[idx];
+            const badge = currentBadges[idx];
+            if (!domain || !badge || badge.innerText.includes('LIKELY') || badge.innerText === 'CHECKING...') return;
+
+            badge.innerText = 'CHECKING...';
+            badge.className = 'status-badge status-pending';
+            try {
+                const res = await fetch(`${API_BASE}/api/check?url=${encodeURIComponent(domain)}&filter=${filter}`);
+                const data = await res.json();
+                const blocked = Array.isArray(data.result) ? data.result[1] : (data.result.blocked || false);
+                badge.innerText = blocked ? 'LIKELY BLOCKED' : 'LIKELY UNBLOCKED';
+                badge.className = `status-badge ${blocked ? 'status-blocked' : 'status-allowed'}`;
+            } catch { badge.innerText = 'ERROR'; }
+        }
+
+        async function findDomains() {
+            const q = input.value.trim();
+            if (!q) return;
+            results.innerHTML = 'Searching...';
+            errorMsg.innerText = '';
+            btn.disabled = true;
+            try {
+                const res = await fetch(`${API_BASE}/api/domains?url=${encodeURIComponent(q)}`);
+                const data = await res.json();
+                results.innerHTML = '';
+                currentDomains = data.domains || [];
+                currentBadges = [];
+                currentDomains.forEach((d, i) => {
+                    const a = document.createElement('a');
+                    a.href = d.startsWith('http') ? d : 'https://' + d;
+                    a.target = '_blank';
+                    a.className = 'result-item';
+                    const left = document.createElement('div');
+                    left.textContent = d;
+                    const badge = document.createElement('span');
+                    badge.className = 'status-badge status-pending';
+                    badge.innerText = 'CHECK';
+                    a.appendChild(left);
+                    a.appendChild(badge);
+                    results.appendChild(a);
+                    currentBadges.push(badge);
+                    const f = filterSelect.value;
+                    if (f && i < 30) checkDomain(i, f);
+                    badge.onclick = (e) => { e.preventDefault(); e.stopPropagation(); checkDomain(i, f || 'securly'); };
+                });
+                if (!currentDomains.length) results.innerHTML = 'Try again later, quota may be low';
+            } catch (err) { errorMsg.innerText = err.message; }
+            finally { btn.disabled = false; }
+        }
+
+        btn.onclick = findDomains;
+        input.onkeypress = (e) => { if (e.key === 'Enter') findDomains(); };
+    </script>
+    <script src="../components/topbar.js"></script>
+    <script src="../components/footer.js" defer></script>
+</body>
+
+</html>

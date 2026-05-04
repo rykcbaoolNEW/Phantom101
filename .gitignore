@@ -1,0 +1,7 @@
+.agent
+.agents
+.kilo
+testin/cloudfare
+.kilo/agent-manager.json
+node_modules
+build.js
