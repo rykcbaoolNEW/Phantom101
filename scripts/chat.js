@@ -665,6 +665,8 @@ class PhantomChat {
                 })
             ];
 
+            console.log("📡 About to fetch CeloAI...");
+
             const res = await fetch(this.baseTextUrl, {
                 method: 'POST',
                 headers: {
@@ -680,7 +682,11 @@ class PhantomChat {
                 })
             });
 
-            if (!res.ok) throw new Error(`API Error: ${res.status}`);
+            if (!res.ok) {
+                const errorText = await res.text();
+                console.error("CeloAI API error:", res.status, errorText);
+                throw new Error(`API Error: ${res.status} - ${errorText}`);
+            }
 
             thinkingEl?.remove();
 
