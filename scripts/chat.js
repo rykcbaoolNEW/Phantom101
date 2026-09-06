@@ -25,8 +25,8 @@ class PhantomChat {
 
         this.dom = {};
         this.storageKey = 'phantom_ai_data';
-        this.apiKey = 'sk_j66iDfX2lPbTZ2Otb9MI7xje7kRZQUyE';
-        this.baseTextUrl = 'https://gen.pollinations.ai/v1/chat/completions';
+        this.apiKey = 'celo_jif6gCZ3frds5SOuKIG7nui6S6vGemavxd4vUfLG1k0';
+        this.baseTextUrl = 'https://api.celoai.org/api/celo/v1/chat/completions';
         this.baseImageUrl = 'https://gen.pollinations.ai/image/';
         this.currentAttachments = [];
 
