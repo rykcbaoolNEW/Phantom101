@@ -606,14 +606,19 @@ class PhantomChat {
     }
 
     async generateText(input, conv, currentAttachments = []) {
-        const thinkingId = 'thinking-' + Date.now();
-        const thinkingEl = this.appendMessage({ role: 'ai', id: thinkingId, isThinking: true });
+    const thinkingId = 'thinking-' + Date.now();
+    const thinkingEl = this.appendMessage({ role: 'ai', id: thinkingId, isThinking: true });
 
-        this.abortController = new AbortController();
-        if (this.dom.stopBtn) this.dom.stopBtn.style.display = 'flex';
-        if (this.dom.sendBtn) this.dom.sendBtn.style.display = 'none';
+    this.abortController = new AbortController();
 
-        let fullContent = '';
+    console.log("generateText started");
+    console.log("API URL:", this.baseTextUrl);
+    console.log("Abort controller:", this.abortController);
+
+    if (this.dom.stopBtn) this.dom.stopBtn.style.display = 'flex';
+    if (this.dom.sendBtn) this.dom.sendBtn.style.display = 'none';
+
+    let fullContent = '';
         let messageId = 'msg-' + Date.now();
         let messageEl = null;
 
